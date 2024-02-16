@@ -4,3 +4,7 @@ optimize_memory.py
 prove04feb
 prove_reg
 *.idea
+*.png
+iframe_figures
+compute_nP.py
+prove16feb

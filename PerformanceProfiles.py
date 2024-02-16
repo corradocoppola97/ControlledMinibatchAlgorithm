@@ -1,6 +1,7 @@
 import os
 import torch
 import matplotlib.pyplot as plt
+import pandas as pd
 dataset_list = [ds[:-4] for ds in os.listdir('dataset')]
 architectures = ['S','M','L','XL','XXL','XXXL','4XL']
 all_probs = [(ds,net) for ds in dataset_list for net in architectures]
@@ -29,7 +30,7 @@ def fw0(problem,seed):
     return fw0
 
 
-def c_sp(algo,problem,tau,seed):
+def c_sp(problem,tau,seed,algo):
     ds, net = problem
     initial_loss = fw0(problem, seed)
     fL = find_fL(problem,seed)[0]
@@ -37,10 +38,11 @@ def c_sp(algo,problem,tau,seed):
     stats = torch.load(file,map_location=torch.device('cpu'))
     train_loss = stats['train_loss']
     elapsed_time = stats['time_4_epoch']
-    csp = 3000
+    csp = 1e8
     for idx,loss in enumerate(train_loss):
         if loss <= fL + tau*(initial_loss-fL):
             csp = elapsed_time[idx]
+            break
     return csp
 
 def r_sp(problem,tau,seed,solver):
@@ -56,13 +58,11 @@ def r_sp(problem,tau,seed,solver):
 
 def rho(solver,alpha,tau,seed,big_flag=False,small_flag=False):
     rh = 0
-    assert small_flag != big_flag
+    assert (small_flag != big_flag or (small_flag == big_flag and big_flag == False))
     if big_flag == True:
-        probs = [p for p in all_probs if p[0] in ['BlogFeedback','Covtype','Protein','Skin NonSkin','YearPredictionMSD']
-                 and p[1] in ['XXXL','4XL','XXL']]
+        probs = [p for p in all_probs if p[1] in ['XXXL','4XL','XXL']]
     elif small_flag == True:
-        probs = [p for p in all_probs if p[0] not in ['BlogFeedback', 'Covtype', 'Protein', 'Skin NonSkin', 'YearPredictionMSD']
-                 and p[1] not in ['XXXL', '4XL', 'XXL']]
+        probs = [p for p in all_probs if p[1] not in ['XXXL', '4XL', 'XXL']]
     else:
         probs = all_probs
     for problem in probs:
@@ -78,7 +78,7 @@ def plot_PP(big_flag,small_flag,tau):
     alphas = [1,2,4,8,16,32,64]
     seeds = [10,100,1000,10000]
     colors = ['red','blue','green','orange']
-    mk = ['.','o','v','*']
+    mk = ['.','o','v']#,'*']
     idx = 0
     for solver in algos:
         pp = []
@@ -93,16 +93,53 @@ def plot_PP(big_flag,small_flag,tau):
     plt.ylabel(chr(961) + '(' + chr(945) + ')')
     plt.legend(algos)
     title = chr(964)+'='+str(tau)+' '
-    if big_flag == True: title += '(Big data sets)'
-    if small_flag == True: title += '(Small data sets)'
+    if big_flag == True: title += '(Big networks)'
+    if small_flag == True: title += '(Small networks)'
     plt.title(title)
-    plt.savefig('PP_'+title+'.pdf')
+    plt.savefig('PP_noLBFGS_'+title+'.pdf')
     print('DONE')
     #plt.show()
 
+import numpy as np
 
-if __name__ == '__main__':
-    for tau in [1e-1,1e-2,1e-4]:
-        plot_PP(big_flag=True,small_flag=False,tau=tau)
-        plot_PP(big_flag=False, small_flag=True, tau=tau)
+def plotPP(seeds,tau,all_probs,big_flag,small_flag):
+    list_R = []
+    if small_flag == True:
+        all_probs = [p for p in all_probs if p[1] not in ['XXXL','XXL','4XL']]
+    if big_flag == True:
+        all_probs = [p for p in all_probs if p[1] in ['XXXL', 'XXL', '4XL']]
+    for seed in seeds:
+        C = np.array([[c_sp(pr,tau,seed,algo) for pr in all_probs] for algo in algos])
+        c_star = np.min(C,0)
+        R = C/c_star
+        list_R.append(R)
+    R = sum(list_R)/len(list_R)
+    for i in range(len(algos)): R[i].sort()
+    max_data = np.max(R[R<=1000])
+    for i in range(R.shape[0]):
+        for j in range(R.shape[1]):
+            if R[i, j] > max_data:
+                R[i, j] = 2 * max_data
+    m = [pp/len(all_probs) for pp in range(1,len(all_probs)+1)]
+    colors = ['b','r','g','orange']
+    plt.figure()
+    plt.xlabel(chr(945))
+    plt.ylabel(chr(961) + '(' + chr(945) + ')')
+    plt.legend(algos)
+    #plt.xscale('log')
+    #plt.xlim(1,1.1*max_data)
+    for i in range(len(algos)):
+        plt.step(R[i],m,colors[i])
+    plt.legend(algos)
+    title = chr(964)+'='+str(tau)+' '
+    if big_flag == True: title += '(Big data sets)'
+    if small_flag == True: title += '(Small data sets)'
+    plt.title(title)
+    plt.show()
+    plt.savefig('PP_'+title+'.pdf')
+    print('DONE')
+    return  C,R
 
+# seeds = [10,100,1000,10000]
+# tau = 1e-1
+# c,r = plotPP(seeds,tau,all_probs,big_flag=False,small_flag=False)
