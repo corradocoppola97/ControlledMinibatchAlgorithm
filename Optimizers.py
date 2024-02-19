@@ -639,13 +639,13 @@ class LBFGS(Optimizer):
     def __init__(self,
                  params,
                  lr=1,
-                 max_iter=20,
-                 max_eval=None,
+                 max_iter=1000000000,
+                 max_eval=1000000000,
                  tolerance_grad=1e-7,
                  tolerance_change=1e-9,
                  history_size=100,
-                 line_search_fn=None,
-                 time_limit = 300,
+                 line_search_fn='strong_wolfe',
+                 time_limit = 100,
                  verbose = False):
         if max_eval is None:
             max_eval = max_iter * 5 // 4

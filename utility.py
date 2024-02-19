@@ -12,7 +12,7 @@ def closure(dataset: Dataset,
             mod,
             loss_fun,
             test = False,
-            rho = 1e-6): #Used to compute the loss on the entire data set
+            rho = 0): #Used to compute the loss on the entire data set
     with torch.no_grad():
         try:
             if test == False:
@@ -25,11 +25,8 @@ def closure(dataset: Dataset,
             loss = loss_fun(Y,Y_pred)
         except:
             loss = closure_fragmented(dataset,device,loss_fun,test)
-        reg_term = 0
-        for param in mod.parameters():
-            reg_term += torch.linalg.norm(param)**2
 
-    return loss + rho*reg_term
+    return loss
 
 
 def closure_fragmented(dataset: Dataset,

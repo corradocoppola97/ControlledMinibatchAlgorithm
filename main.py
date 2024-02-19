@@ -93,10 +93,6 @@ def train_model(ds: str,
             #print(f'shape_x= {x.shape}, shape_y= {y.shape}')
             y_pred = model(x)
             loss = criterion(y.flatten(), y_pred.flatten())
-            reg_term = 0
-            for param in model.parameters():
-                reg_term += torch.linalg.norm(param)**2
-            loss += rho*reg_term
             loss.backward()
             #if verbose_train: print(f'Batch {j+1}/{n_iterations}   Running Loss: {loss.item():.6f}')
 
@@ -169,40 +165,18 @@ def train_model(ds: str,
     return history
 
 
-# history = train_model(ds='Mv', arch='L', sm_root='prove16feb', opt='adam', ep=5, time_limit=100,
-#                                    ID_history='FAKE', batch_size=128,
-#                                    verbose_train=True, seed=1,lr=1e-2)
 
 
 
 if __name__ == "__main__":
     dataset_list = [ds[:-4] for ds in os.listdir('dataset')]
-    algorithms = ['lbfgs','ig','cma','nmcma','adam']
+    algorithms = ['lbfgs','ig','cma','nmcma']
     architectures = ['XXL','XXXL','4XL','S','M','L','XL']
-    seeds = [1]#,10,100,1000,10000]
+    seeds = [1,10,100,1000,10000]
     all_probs = [(ds,net) for ds in dataset_list for net in architectures]
-    smroot = 'prove16feb/'
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    smroot = 'prove09gen/'
+    device = 'cpu'
     print('device == ',device)
-
-    print('---------------- ADAM -----------------')
-    for idx,problem in enumerate(all_probs):
-        print(f'Solving Problem {idx+1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
-        for j,seed in enumerate(seeds):
-            print(f'Run {j+1}/{len(seeds)}')
-            history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='adam', ep=1000000, time_limit=100,
-                          ID_history='seed_'+str(seed), batch_size=128,
-                          verbose_train=False, seed=seed, lr=1e-2, device=device)
-
-    print('---------------- CMA -----------------')
-    for idx,problem in enumerate(all_probs):
-        print(f'Solving Problem {idx+1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
-        for j,seed in enumerate(seeds):
-            print(f'Run {j+1}/{len(seeds)}')
-            history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='cma', ep=1000000, time_limit=100,
-                                  max_it_EDFL=100, ID_history='seed_'+str(seed), alpha=0.5, zeta=1e-3, eps=1e-3, theta=0.5,
-                                  delta=0.5, gamma=1e-6, verbose=False, tau=1e-2, batch_size=128, verbose_EDFL=False,
-                                  verbose_train=False, seed=seed, device=device)
 
     print('---------------- LBFGS -----------------')
     for idx, problem in enumerate(all_probs):
@@ -211,7 +185,7 @@ if __name__ == "__main__":
             print(f'Run {j + 1}/{len(seeds)}')
             history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='lbfgs', ep=1000000, time_limit=100,
                                   ID_history='seed_' + str(seed), verbose=False, batch_size=128,
-                                  verbose_train=True, seed=seed, device=device)
+                                  verbose_train=False, seed=seed, device='cpu')
 
     print('---------------- NMCMA -----------------')
     for idx,problem in enumerate(all_probs):
@@ -231,6 +205,18 @@ if __name__ == "__main__":
             history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='ig', ep=50000, time_limit=100,
                                   eps=1e-3,zeta=1e-3,verbose=False,verbose_train=False, batch_size=128, seed=seed,
                                   ID_history='seed_'+str(seed), device=device)
+
+    print('---------------- CMA -----------------')
+    for idx, problem in enumerate(all_probs):
+        print(f'Solving Problem {idx + 1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
+        for j, seed in enumerate(seeds):
+            print(f'Run {j + 1}/{len(seeds)}')
+            history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='cma', ep=1000000, time_limit=100,
+                                  max_it_EDFL=100, ID_history='seed_' + str(seed), alpha=0.5, zeta=1e-3, eps=1e-3,
+                                  theta=0.5,
+                                  delta=0.5, gamma=1e-6, verbose=False, tau=1e-2, batch_size=128, verbose_EDFL=False,
+                                  verbose_train=False, seed=seed, device=device)
+
 
 
 

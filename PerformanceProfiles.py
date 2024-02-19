@@ -1,12 +1,16 @@
 import os
+import random
+import  matplotlib
+
 import torch
 import matplotlib.pyplot as plt
 import pandas as pd
 dataset_list = [ds[:-4] for ds in os.listdir('dataset')]
 architectures = ['S','M','L','XL','XXL','XXXL','4XL']
 all_probs = [(ds,net) for ds in dataset_list for net in architectures]
-os.chdir('prove_reg')
-algos = ['ig','cma','nmcma','lbfgs']
+big_datasets = ['BlogFeedback', 'Covtype', 'Protein', 'Skin NonSkin', 'YearPredictionMSD']
+os.chdir('prove09gen')
+algos = ['cma','nmcma','ig','lbfgs']
 
 
 def find_fL(problem,seed):
@@ -23,7 +27,7 @@ def find_fL(problem,seed):
 
 def fw0(problem,seed):
     ds, net = problem
-    algo = 'cma'
+    algo = 'nmcma'
     file = 'history_' + algo + '_' + net + '_' + ds + '_seed_' + str(seed) + '.txt'
     stats = torch.load(file,map_location=torch.device('cpu'))
     fw0 = stats['train_loss'][0]
@@ -76,8 +80,8 @@ def plot_PP(big_flag,small_flag,tau):
     plt.figure()
     plt.xscale('log')
     alphas = [1,2,4,8,16,32,64]
-    seeds = [10,100,1000,10000]
-    colors = ['red','blue','green','orange']
+    seeds = [1,10,100,1000,10000]
+    colors = ['red','blue','green','orange','black']
     mk = ['.','o','v']#,'*']
     idx = 0
     for solver in algos:
@@ -104,10 +108,11 @@ import numpy as np
 
 def plotPP(seeds,tau,all_probs,big_flag,small_flag):
     list_R = []
+    print(algos)
     if small_flag == True:
-        all_probs = [p for p in all_probs if p[1] not in ['XXXL','XXL','4XL']]
+        all_probs = [p for p in all_probs if p[0] not in big_datasets]
     if big_flag == True:
-        all_probs = [p for p in all_probs if p[1] in ['XXXL', 'XXL', '4XL']]
+        all_probs = [p for p in all_probs if p[0] in big_datasets]
     for seed in seeds:
         C = np.array([[c_sp(pr,tau,seed,algo) for pr in all_probs] for algo in algos])
         c_star = np.min(C,0)
@@ -115,31 +120,36 @@ def plotPP(seeds,tau,all_probs,big_flag,small_flag):
         list_R.append(R)
     R = sum(list_R)/len(list_R)
     for i in range(len(algos)): R[i].sort()
-    max_data = np.max(R[R<=1000])
+    max_data = np.max(R[R<=100])
     for i in range(R.shape[0]):
         for j in range(R.shape[1]):
             if R[i, j] > max_data:
                 R[i, j] = 2 * max_data
     m = [pp/len(all_probs) for pp in range(1,len(all_probs)+1)]
-    colors = ['b','r','g','orange']
+    colors = ['b','r','g','orange','black']
     plt.figure()
     plt.xlabel(chr(945))
     plt.ylabel(chr(961) + '(' + chr(945) + ')')
     plt.legend(algos)
-    #plt.xscale('log')
-    #plt.xlim(1,1.1*max_data)
+    plt.xscale('log')
+    plt.xlim(1,1.2*max_data)
+    #plt.xticks((1,2,4,8))
     for i in range(len(algos)):
-        plt.step(R[i],m,colors[i])
-    plt.legend(algos)
+        plt.step(R[i],m,colors[i],linewidth=2.25)
+    plt.legend(['CMA','NMCMA','IG','LBFGS'])
+    plt.gca().xaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    plt.gca().ticklabel_format(style='plain')
     title = chr(964)+'='+str(tau)+' '
     if big_flag == True: title += '(Big data sets)'
     if small_flag == True: title += '(Small data sets)'
     plt.title(title)
-    plt.show()
+    #plt.show()
     plt.savefig('PP_'+title+'.pdf')
     print('DONE')
     return  C,R
 
-# seeds = [10,100,1000,10000]
-# tau = 1e-1
-# c,r = plotPP(seeds,tau,all_probs,big_flag=False,small_flag=False)
+seeds = [1,10,100,1000,10000]
+taus = [1e-1,1e-2,1e-3,1e-4]
+for tau in taus:
+    c,r = plotPP(seeds,tau,all_probs,big_flag=False,small_flag=True)
+    c, r = plotPP(seeds, tau, all_probs, big_flag=True, small_flag=False)
