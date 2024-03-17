@@ -2,7 +2,7 @@ import numpy as np
 import pickle
 import pandas as pd
 from Model import *
-from Optimizers import *
+from Optimizers import CMA_L, CMA, LBFGS, IG, NMCMA
 from Dataset import Dataset
 
 
@@ -12,9 +12,9 @@ def closure(dataset: Dataset,
             mod,
             loss_fun,
             test = False,
-            rho = 0): #Used to compute the loss on the entire data set
+            fragmentation = True): #Used to compute the loss on the entire data set
     with torch.no_grad():
-        try:
+        if fragmentation == False:
             if test == False:
                 X = dataset.x_train.to(device)
                 Y = dataset.y_train.to(device)
@@ -23,8 +23,8 @@ def closure(dataset: Dataset,
                 Y = dataset.y_test.to(device)
             Y_pred = mod(X)
             loss = loss_fun(Y,Y_pred)
-        except:
-            loss = closure_fragmented(dataset,device,loss_fun,test)
+        else:
+            loss = closure_fragmented(dataset,device,mod,loss_fun,test)
 
     return loss
 
@@ -33,44 +33,58 @@ def closure_fragmented(dataset: Dataset,
                 device: torch.device,
                 mod,
                 loss_fun,
-                test=False,
-                rho = 1e-6): #Used in case of GPU/CPU overflow
+                test=False): #Used in case of GPU/CPU overflow
     with torch.no_grad():
         if test == False:
             mb_size = 128
-            n_it = np.ceil((dataset.P/mb_size))
+            n_it = int(np.ceil((dataset.P/mb_size)))
             L = 0
             for j in range(n_it):
                 dataset.minibatch(j*mb_size,(j+1)*mb_size)
                 x = dataset.x_train_mb.to(device)
                 y = dataset.y_train_mb.to(device)
                 y_pred = mod(x)
-                loss = loss_fun(y,y_pred).item()
+                loss = loss_fun(input=y_pred,target=y).item()
                 L += (len(x)/dataset.P)*loss
         else:
-            L = -100
-        reg_term = 0
-        for param in mod.parameters():
-            reg_term += torch.linalg.norm(param)**2
-    return L + rho*reg_term
+            mb_size = 128
+            n_it = int(np.ceil((dataset.P_test / mb_size)))
+            L = 0
+            for j in range(n_it):
+                dataset.minibatch(j * mb_size, (j + 1) * mb_size,test=True)
+                x = dataset.x_test_mb.to(device)
+                y = dataset.y_test_mb.to(device)
+                y_pred = mod(x)
+                loss = loss_fun(input=y_pred, target=y).item()
+                L += (len(x) / dataset.P) * loss
+    return L
+
+
+def accuracy(dataset,
+            mod,
+            device):
+    correct_predictions = 0
+    total_samples = 0
+    with torch.no_grad():
+        mb_size = 128
+        n_it = int(np.ceil((dataset.P_test / mb_size)))
+        for j in range(n_it):
+            dataset.minibatch(j * mb_size, (j + 1) * mb_size, test=True)
+            inputs = dataset.x_test_mb.to(device)
+            labels = dataset.y_test_mb.to(device)
+            outputs = mod(inputs)
+            _, predicted = torch.max(outputs, 1)
+            total_samples += labels.size(0)
+            correct_predictions += (predicted == labels).sum().item()
+
+    accuracy = correct_predictions / total_samples
+    return accuracy
 
 
 
 
 
-def save_csv_history(path,ID):
-    objects = []
-    with (open(path + '.pkl', "rb")) as openfile:
-        while True:
-            try:
-                objects.append(pickle.load(openfile))
-            except EOFError:
-                break
-    df = pd.DataFrame(objects)
-    df.to_csv(path + ID +'.csv', header=False, index=False, sep=" ")
-
-
-def set_architecture(arch:str, input_dim:int, seed: int):
+def set_architecture(arch:str, input_dim:int, seed: int, num_classes = 10):
     torch.manual_seed(seed)
     if arch=='S':
         return nn.Sequential(nn.Linear(input_dim,50),nn.Sigmoid(),nn.Linear(50,1))
@@ -123,9 +137,63 @@ def set_architecture(arch:str, input_dim:int, seed: int):
                              nn.Sigmoid(), nn.Linear(500, 500), nn.Sigmoid(), nn.Linear(500, 500),
                              nn.Sigmoid(), nn.Linear(500, 500), nn.Sigmoid(), nn.Linear(500, 500),
                              nn.Sigmoid(), nn.Linear(500, 50),nn.Linear(50, 1))
+
     else:
         raise SystemError('Set an architecture in {S,M,L,XL,XXL,XXXL,4XL} and try again')
 
+
+def set_CNN(arch:str, seed: int, num_classes = 10):
+    torch.manual_seed(seed)
+    if arch == 'resnet18':
+        pretrainedmodel = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1,
+                                                      progress=True)
+        num_ftrs = pretrainedmodel.fc.in_features
+        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        return pretrainedmodel
+
+    elif arch == 'resnet50':
+        pretrainedmodel = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1,
+                                                      progress=True)
+        num_ftrs = pretrainedmodel.fc.in_features
+        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        return pretrainedmodel
+
+    elif arch == 'resnet152':
+        pretrainedmodel = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V1,
+                                                       progress=True)
+        num_ftrs = pretrainedmodel.fc.in_features
+        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        return pretrainedmodel
+
+    elif arch == 'resnet34':
+        pretrainedmodel = torchvision.models.resnet34(weights=torchvision.models.ResNet34_Weights.IMAGENET1K_V1,
+                                                       progress=True)
+        num_ftrs = pretrainedmodel.fc.in_features
+        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        return pretrainedmodel
+
+    elif arch == 'resnet101':
+        pretrainedmodel = torchvision.models.resnet101(weights=torchvision.models.ResNet101_Weights.IMAGENET1K_V1,
+                                                       progress=True)
+        num_ftrs = pretrainedmodel.fc.in_features
+        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        return pretrainedmodel
+
+    elif arch == 'mobilenet_v2':
+        pretrainedmodel = torchvision.models.mobilenet_v2(
+            weights=torchvision.models.MobileNet_V2_Weights.IMAGENET1K_V1, progress=True)
+        num_ftrs = pretrainedmodel.classifier[1].in_features
+        pretrainedmodel.classifier[1] = torch.nn.Linear(num_ftrs, num_classes)
+        torch.nn.init.xavier_uniform(pretrainedmodel.classifier[1].weight)
+        return pretrainedmodel
+
+    else:
+        raise SystemError('Set an architecture resnet or mobilenet and try again')
 
 def set_optimizer(opt: str, model: FNN, *args, **kwargs):
     if opt == 'adadelta':
@@ -148,9 +216,23 @@ def set_optimizer(opt: str, model: FNN, *args, **kwargs):
         optimizer = IG(model.parameters(), *args, **kwargs)
     elif opt == 'nmcma':
         optimizer = NMCMA(model.parameters(), *args, **kwargs)
+    elif opt=='cmal':
+        optimizer = CMA_L(model.parameters(), *args, **kwargs)
     else:
         raise SystemError('Optimizer not supported')
 
     return optimizer
 
 
+
+
+def get_w(model):
+    weights = [p.ravel().detach() for p in model.parameters()]
+    return torch.cat(weights)
+
+def set_w(model, w):
+    index = 0
+    for param in model.parameters():
+        param_size = torch.prod(torch.tensor(param.size())).item()
+        param.data = w[index:index+param_size].view(param.size()).to(param.device)
+        index += param_size

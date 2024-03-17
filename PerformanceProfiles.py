@@ -9,8 +9,8 @@ dataset_list = [ds[:-4] for ds in os.listdir('dataset')]
 architectures = ['S','M','L','XL','XXL','XXXL','4XL']
 all_probs = [(ds,net) for ds in dataset_list for net in architectures]
 big_datasets = ['BlogFeedback', 'Covtype', 'Protein', 'Skin NonSkin', 'YearPredictionMSD']
-os.chdir('prove09gen')
-algos = ['cma','nmcma','ig','lbfgs']
+os.chdir('prove_CMAL')
+algos = ['cma','cmal','ig','adam','adagrad','adadelta']
 
 
 def find_fL(problem,seed):
@@ -110,9 +110,9 @@ def plotPP(seeds,tau,all_probs,big_flag,small_flag):
     list_R = []
     print(algos)
     if small_flag == True:
-        all_probs = [p for p in all_probs if p[0] not in big_datasets]
+        all_probs = [p for p in all_probs if p[1] not in ['XXL','XXXL','4XL']]
     if big_flag == True:
-        all_probs = [p for p in all_probs if p[0] in big_datasets]
+        all_probs = [p for p in all_probs if p[1] in ['XXL','XXXL','4XL']]
     for seed in seeds:
         C = np.array([[c_sp(pr,tau,seed,algo) for pr in all_probs] for algo in algos])
         c_star = np.min(C,0)
@@ -126,7 +126,7 @@ def plotPP(seeds,tau,all_probs,big_flag,small_flag):
             if R[i, j] > max_data:
                 R[i, j] = 2 * max_data
     m = [pp/len(all_probs) for pp in range(1,len(all_probs)+1)]
-    colors = ['b','r','g','orange','black']
+    colors = ['b','r','g','orange','black','pink']
     plt.figure()
     plt.xlabel(chr(945))
     plt.ylabel(chr(961) + '(' + chr(945) + ')')
@@ -136,12 +136,12 @@ def plotPP(seeds,tau,all_probs,big_flag,small_flag):
     #plt.xticks((1,2,4,8))
     for i in range(len(algos)):
         plt.step(R[i],m,colors[i],linewidth=2.25)
-    plt.legend(['CMA','NMCMA','IG','LBFGS'])
+    plt.legend(['CMA','CMA Light','IG','Adam','Adagrad','Adadelta'])
     plt.gca().xaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
     plt.gca().ticklabel_format(style='plain')
-    title = chr(964)+'='+str(tau)+' '
-    if big_flag == True: title += '(Big data sets)'
-    if small_flag == True: title += '(Small data sets)'
+    title = 'tau='+str(tau)+'_'
+    if big_flag == True: title += '(BigNetworks)'
+    if small_flag == True: title += '(SmallNetworks)'
     plt.title(title)
     #plt.show()
     plt.savefig('PP_'+title+'.pdf')
@@ -149,7 +149,7 @@ def plotPP(seeds,tau,all_probs,big_flag,small_flag):
     return  C,R
 
 seeds = [1,10,100,1000,10000]
-taus = [1e-1,1e-2,1e-3,1e-4]
+taus = [1e-1,1e-2,1e-4]
 for tau in taus:
     c,r = plotPP(seeds,tau,all_probs,big_flag=False,small_flag=True)
     c, r = plotPP(seeds, tau, all_probs, big_flag=True, small_flag=False)

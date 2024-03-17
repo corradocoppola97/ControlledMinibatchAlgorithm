@@ -22,7 +22,7 @@ def train_model(ds: str,
                 verbose_train = False,
                 shuffle = False,
                 device = 'cpu',
-                criterion = torch.nn.functional.mse_loss,
+                criterion = torch.nn.CrossEntropyLoss(),
                 *args,
                 **kwargs):
 
@@ -35,18 +35,18 @@ def train_model(ds: str,
 
     # Setups
     history = {'train_loss': [], 'val_loss': [], 'time_4_epoch': [], 'step_size': [],
-               'accepted': [], 'nfev': 0, 'Exit':[]}
+               'accepted': [], 'nfev': 0, 'Exit':[], 'val_accuracy':[]}
     dataset = create_dataset(ds)
-    input_dim = dataset.n
-    layers = set_architecture(arch,input_dim,seed)
-    model = FNN(layers=layers).to(device)
+    num_classes = dataset.n
+    model = set_CNN(arch,seed,num_classes).to(device)
     optimizer = set_optimizer(opt,model,*args,**kwargs)
-    if opt == 'lbfgs' and batch_size != dataset.P:
-        batch_size = dataset.P
-        ep = 1
-        if verbose_train==True: print(f'Setting batch size = {dataset.P}  and ep = 1 since you are using a full-batch method')
 
     if verbose_train: print("\n --------- Start Train --------- \n")
+    test_loss = closure(dataset,device,model,criterion,test=True)
+    val_acc = accuracy(dataset,model,device)
+    history['val_loss'].append(test_loss)
+    history['val_accuracy'].append(val_acc)
+    history['time_4_epoch'].append(0.0)
 
     # Train
     start_time_4_epoch = time.time()
@@ -65,10 +65,8 @@ def train_model(ds: str,
     else:
         f_before = closure(dataset,device,model,criterion)
         history['nfev'] += 1
-    test_loss = closure(dataset,device,model,criterion,test=True)
     history['train_loss'].append(f_before)
-    history['val_loss'].append(test_loss)
-    history['time_4_epoch'].append(0.0)
+
     if optimizer in {'nmcma','cma','ig','cmal'}:
         history['step_size'].append(optimizer.param_groups[0]['zeta'])
 
@@ -97,12 +95,8 @@ def train_model(ds: str,
             loss = criterion(target=y, input=y_pred)
             f_tilde += loss.item() * (len(x) / dataset.P)
             loss.backward()
-            #if verbose_train: print(f'Batch {j+1}/{n_iterations}   Running Loss: {loss.item():.6f}')
-
-            if opt=='lbfgs':
-                optimizer.step(closure,dataset=dataset,device=device,mod=model,loss_fun=criterion)
-            else:
-                optimizer.step()
+            optimizer.step()
+            #if verbose_train and ((j+1)%25 == 0 or j==0): print(f'Batch {j+1}/{n_iterations}   Running Loss: {loss.item():.6f}')
 
         # CMA support functions
         if opt == 'cma':
@@ -170,7 +164,9 @@ def train_model(ds: str,
             if history['step_size'][-1] <= 1e-15:
                 history['comments'] = f'Forced stopping at epoch {epoch}'
                 break
-        if verbose_train: print(f'End Epoch {epoch}   Train Loss:{f_after:3e}  Elapsed time:{elapsed_time_4_epoch:3f} \n ')
+        val_acc = accuracy(dataset,model,device)
+        history['val_accuracy'].append(val_acc)
+        if verbose_train: print(f'End Epoch {epoch}   Train Loss:{f_after:3e}  Elapsed time:{elapsed_time_4_epoch:3f}   Val_acc: {val_acc} \n ')
 
 
         # Empty CUDA cache
@@ -186,76 +182,34 @@ def train_model(ds: str,
     return history
 
 
-"""history = train_model(ds='Mv', arch='XXL', sm_root='', opt='cma', ep=10, time_limit=100,
-                      max_it_EDFL=100, ID_history='seed_' + str(1), alpha=0.5, zeta=1e-3, eps=1e-3,
-                      theta=0.5,
-                      delta=0.5, gamma=1e-6, verbose=True, tau=1e-2, batch_size=128, verbose_EDFL=True,
-                      verbose_train=True, seed=1, device='cpu')
-
-history2 = train_model(ds='Mv', arch='XXL', sm_root='', opt='cmal', ep=10, time_limit=100,
-                      max_it_EDFL=100, ID_history='seed_' + str(1), alpha=0.5, zeta=1e-3, eps=1e-3,
-                      theta=0.5,
-                      delta=0.5, gamma=1e-6, verbose=True, tau=1e-2, batch_size=128, verbose_EDFL=True,
-                      verbose_train=True, seed=1, device='cpu')"""
-
 if __name__ == "__main__":
-    dataset_list = [ds[:-4] for ds in os.listdir('dataset')]
-    algorithms = ['lbfgs','ig','cma','nmcma']
-    architectures = ['XXL','XXXL','4XL','S','M','L','XL']
-    seeds = [1,10,100,1000,10000]
-    all_probs = [(ds,net) for ds in dataset_list for net in architectures]
-    smroot = 'prove_CMAL/'
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print('device == ',device)
-
-    print('---------------- CMA Light -----------------')
-    for idx, problem in enumerate(all_probs):
-        print(f'Solving Problem {idx + 1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
-        for j, seed in enumerate(seeds):
-            print(f'Run {j + 1}/{len(seeds)}')
-            history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='cmal', ep=1000000, time_limit=100,
-                                  max_it_EDFL=100, ID_history='seed_' + str(seed), alpha=0.5, zeta=1e-2, eps=1e-3,
-                                  theta=0.5,
-                                  delta=0.5, gamma=1e-6, verbose=False, tau=1e-2, batch_size=128, verbose_EDFL=False,
-                                  verbose_train=False, seed=seed, device=device)
-
-
-    # print('---------------- NMCMA -----------------')
-    # for idx,problem in enumerate(all_probs):
-    #  print(f'Solving Problem {idx+1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
-    #  for j,seed in enumerate(seeds):
-    #      print(f'Run {j+1}/{len(seeds)}')
-    #      history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='nmcma', ep=1000000, time_limit=100,
-    #                            max_it_EDFL=100, ID_history='seed_'+str(seed), alpha=0.5, zeta=1e-3, eps=1e-3, theta=0.5,
-    #                            delta=0.5, gamma=1e-6, verbose=False, tau=1e-2, M=5, batch_size=128, verbose_EDFL=False,
-    #                            verbose_train=False, seed=seed, device=device)
-    #
-    # print('---------------- IG -----------------')
-    # for idx,problem in enumerate(all_probs):
-    #  print(f'Solving Problem {idx+1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
-    #  for j,seed in enumerate(seeds):
-    #      print(f'Run {j+1}/{len(seeds)}')
-    #      history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='ig', ep=2000000, time_limit=100,
-    #                            eps=1e-3,zeta=1e-3,verbose=False,verbose_train=False, batch_size=128, seed=seed,
-    #                            ID_history='seed_'+str(seed), device=device)
-    #
-    # print('---------------- CMA -----------------')
-    # for idx, problem in enumerate(all_probs):
-    #  print(f'Solving Problem {idx + 1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
-    #  for j, seed in enumerate(seeds):
-    #      print(f'Run {j + 1}/{len(seeds)}')
-    #      history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='cma', ep=1000000, time_limit=100,
-    #                            max_it_EDFL=100, ID_history='seed_' + str(seed), alpha=0.5, zeta=1e-3, eps=1e-3,
-    #                            theta=0.5,
-    #                            delta=0.5, gamma=1e-6, verbose=False, tau=1e-2, batch_size=128, verbose_EDFL=False,
-    #                            verbose_train=False, seed=seed, device=device)
-
-
-
-
-
-
-
-
-
-
+    seed = 1
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    smroot = 'prove_imclass/'
+    for rete in ['resnet18','resnet34','resnet50','resnet101','resnet152','mobilenet_v2']:
+        print('rete----- ', rete)
+        print('CMA \n')
+        history_cma = train_model(ds='cifar10', arch=rete, sm_root=smroot, opt='cma', ep=200, time_limit=5000,
+                              max_it_EDFL=100, ID_history='seed_' + str(seed), alpha=0.5, zeta=0.05, eps=1e-3,
+                              theta=0.5,
+                              delta=0.5, gamma=1e-6, verbose=True, tau=1e-2, batch_size=128, verbose_EDFL=False,
+                              verbose_train=False, seed=seed,device=device)
+        print('CMAL \n')
+        history_cmal = train_model(ds='cifar10', arch=rete, sm_root=smroot, opt='cmal', ep=200, time_limit=5000,
+                              max_it_EDFL=100, ID_history='seed_' + str(seed), alpha=0.5, zeta=0.05, eps=1e-3,
+                              theta=0.5,
+                              delta=0.9, gamma=1e-6, verbose=False, tau=1e-2, batch_size=128, verbose_EDFL=False,
+                              verbose_train=False, seed=seed,device=device)
+        print('Adam \n')
+        history_adam = train_model(ds='cifar10', arch=rete, sm_root=smroot, opt='adam', ep=200, time_limit=5000,
+                              ID_history='seed_' + str(seed), batch_size=128,
+                              verbose_train=False, seed=seed, device=device)
+        print('Adagrad \n')
+        history_adagrad = train_model(ds='cifar10', arch=rete, sm_root=smroot, opt='adagrad', ep=200, time_limit=5000,
+                              ID_history='seed_' + str(seed), batch_size=128,
+                              verbose_train=False, seed=seed, device=device)
+        print('Adadelta \n')
+        history_adadelta = train_model(ds='cifar10', arch=rete, sm_root=smroot, opt='adadelta', ep=200, time_limit=5000,
+                              ID_history='seed_' + str(seed), batch_size=128,
+                              verbose_train=False, seed=seed, device=device)
+        print('FINE RETE --- \n')
