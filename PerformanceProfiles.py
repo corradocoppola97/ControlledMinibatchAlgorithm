@@ -5,15 +5,10 @@ import  matplotlib
 import torch
 import matplotlib.pyplot as plt
 import pandas as pd
-dataset_list = [ds[:-4] for ds in os.listdir('dataset')]
-architectures = ['S','M','L','XL','XXL','XXXL','4XL']
-all_probs = [(ds,net) for ds in dataset_list for net in architectures]
-big_datasets = ['BlogFeedback', 'Covtype', 'Protein', 'Skin NonSkin', 'YearPredictionMSD']
-os.chdir('prove_CMAL')
 algos = ['cma','cmal','ig','adam','adagrad','adadelta']
 
 
-def find_fL(problem,seed):
+def find_fL(problem,seed,algos):
     ds, net = problem
     bests = {}
     for algo in algos:
@@ -27,17 +22,17 @@ def find_fL(problem,seed):
 
 def fw0(problem,seed):
     ds, net = problem
-    algo = 'nmcma'
+    algo = 'cma'
     file = 'history_' + algo + '_' + net + '_' + ds + '_seed_' + str(seed) + '.txt'
     stats = torch.load(file,map_location=torch.device('cpu'))
     fw0 = stats['train_loss'][0]
     return fw0
 
 
-def c_sp(problem,tau,seed,algo):
+def c_sp(problem,tau,seed,algo,algos):
     ds, net = problem
     initial_loss = fw0(problem, seed)
-    fL = find_fL(problem,seed)[0]
+    fL = find_fL(problem,seed,algos)[0]
     file = 'history_' + algo + '_' + net + '_' + ds + '_seed_' + str(seed) + '.txt'
     stats = torch.load(file,map_location=torch.device('cpu'))
     train_loss = stats['train_loss']
@@ -114,7 +109,7 @@ def plotPP(seeds,tau,all_probs,big_flag,small_flag):
     if big_flag == True:
         all_probs = [p for p in all_probs if p[1] in ['XXL','XXXL','4XL']]
     for seed in seeds:
-        C = np.array([[c_sp(pr,tau,seed,algo) for pr in all_probs] for algo in algos])
+        C = np.array([[c_sp(pr,tau,seed,algo,algos) for pr in all_probs] for algo in algos])
         c_star = np.min(C,0)
         R = C/c_star
         list_R.append(R)
@@ -148,8 +143,14 @@ def plotPP(seeds,tau,all_probs,big_flag,small_flag):
     print('DONE')
     return  C,R
 
-seeds = [1,10,100,1000,10000]
-taus = [1e-1,1e-2,1e-4]
-for tau in taus:
-    c,r = plotPP(seeds,tau,all_probs,big_flag=False,small_flag=True)
-    c, r = plotPP(seeds, tau, all_probs, big_flag=True, small_flag=False)
+if __name__ == '__main__':
+    seeds = [1,10,100,1000,10000]
+    taus = [1e-1,1e-2,1e-4]
+    for tau in taus:
+        dataset_list = [ds[:-4] for ds in os.listdir('dataset')]
+        architectures = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL', '4XL']
+        all_probs = [(ds, net) for ds in dataset_list for net in architectures]
+        big_datasets = ['BlogFeedback', 'Covtype', 'Protein', 'Skin NonSkin', 'YearPredictionMSD']
+        os.chdir('prove_CMAL')
+        c,r = plotPP(seeds,tau,all_probs,big_flag=False,small_flag=True)
+        c, r = plotPP(seeds, tau, all_probs, big_flag=True, small_flag=False)

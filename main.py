@@ -1,10 +1,9 @@
 import random
-
 import torch.optim.lbfgs
-import torch
+from Model import FNN
 from Dataset import *
 from utility import  *
-import os, time, pickle
+import os, time
 from warnings import filterwarnings
 filterwarnings('ignore')
 
@@ -185,18 +184,6 @@ def train_model(ds: str,
     if verbose_train: print('\n - Finished Training - \n')
     return history
 
-
-"""history = train_model(ds='Mv', arch='XXL', sm_root='', opt='cma', ep=10, time_limit=100,
-                      max_it_EDFL=100, ID_history='seed_' + str(1), alpha=0.5, zeta=1e-3, eps=1e-3,
-                      theta=0.5,
-                      delta=0.5, gamma=1e-6, verbose=True, tau=1e-2, batch_size=128, verbose_EDFL=True,
-                      verbose_train=True, seed=1, device='cpu')
-
-history2 = train_model(ds='Mv', arch='XXL', sm_root='', opt='cmal', ep=10, time_limit=100,
-                      max_it_EDFL=100, ID_history='seed_' + str(1), alpha=0.5, zeta=1e-3, eps=1e-3,
-                      theta=0.5,
-                      delta=0.5, gamma=1e-6, verbose=True, tau=1e-2, batch_size=128, verbose_EDFL=True,
-                      verbose_train=True, seed=1, device='cpu')"""
 
 if __name__ == "__main__":
     dataset_list = [ds[:-4] for ds in os.listdir('dataset')]

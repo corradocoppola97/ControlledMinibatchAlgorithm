@@ -1,90 +1,95 @@
 import numpy as np
-import pickle
-import pandas as pd
-from Model import *
-from Optimizers import CMA_L, CMA, LBFGS, IG, NMCMA
+from Optimizers import CMA_L
+from nmcma import NMCMA
+from cma import CMA
+from lbfgs_adapted import *
+from ig import IG
 from Dataset import Dataset
+import torch
+import torch.nn as nn
+import torchvision
+from torch.utils.data import Subset
 
 
 
-def closure(dataset: Dataset,
-            device: torch.device,
-            mod,
-            loss_fun,
-            test = False,
-            fragmentation = True): #Used to compute the loss on the entire data set
-    with torch.no_grad():
-        if fragmentation == False:
-            if test == False:
-                X = dataset.x_train.to(device)
-                Y = dataset.y_train.to(device)
-            else:
-                X = dataset.x_test.to(device)
-                Y = dataset.y_test.to(device)
-            Y_pred = mod(X)
-            loss = loss_fun(Y,Y_pred)
-        else:
-            loss = closure_fragmented(dataset,device,mod,loss_fun,test)
 
-    return loss
-
-
-def closure_fragmented(dataset: Dataset,
+def closure(dataset,
                 device: torch.device,
                 mod,
                 loss_fun,
-                test=False): #Used in case of GPU/CPU overflow
+                test=False):
+    mod.eval()
     with torch.no_grad():
-        if test == False:
-            mb_size = 128
-            n_it = int(np.ceil((dataset.P/mb_size)))
-            L = 0
-            for j in range(n_it):
-                dataset.minibatch(j*mb_size,(j+1)*mb_size)
-                x = dataset.x_train_mb.to(device)
-                y = dataset.y_train_mb.to(device)
-                y_pred = mod(x)
-                loss = loss_fun(input=y_pred,target=y).item()
-                L += (len(x)/dataset.P)*loss
+        if isinstance(dataset, Dataset):
+            if test == False:
+                mb_size = 128
+                n_it = int(np.ceil((dataset.P/mb_size)))
+                L = 0
+                for j in range(n_it):
+                    dataset.minibatch(j*mb_size,(j+1)*mb_size)
+                    x = dataset.x_train_mb.to(device)
+                    y = dataset.y_train_mb.to(device)
+                    y_pred = mod(x)
+                    loss = loss_fun(input=y_pred,target=y).item()
+                    L += (len(x)/dataset.P)*loss
+            else:
+                mb_size = 128
+                n_it = int(np.ceil((dataset.P_test / mb_size)))
+                L = 0
+                for j in range(n_it):
+                    dataset.minibatch(j * mb_size, (j + 1) * mb_size,test=True)
+                    x = dataset.x_test_mb.to(device)
+                    y = dataset.y_test_mb.to(device)
+                    y_pred = mod(x)
+                    loss = loss_fun(input=y_pred, target=y).item()
+                    L += (len(x) / dataset.P) * loss
         else:
-            mb_size = 128
-            n_it = int(np.ceil((dataset.P_test / mb_size)))
             L = 0
-            for j in range(n_it):
-                dataset.minibatch(j * mb_size, (j + 1) * mb_size,test=True)
-                x = dataset.x_test_mb.to(device)
-                y = dataset.y_test_mb.to(device)
+            P = len(dataset)*(len(dataset[0][0])-1)+len(dataset[-1][0])
+            for x, y in dataset:
+                x, y = x.to(device), y.to(device)
                 y_pred = mod(x)
-                loss = loss_fun(input=y_pred, target=y).item()
-                L += (len(x) / dataset.P) * loss
+                loss = loss_fun(y_pred, y)
+                L += loss.item() * (len(x) / P)
     return L
 
 
 def accuracy(dataset,
             mod,
             device):
-    correct_predictions = 0
-    total_samples = 0
     with torch.no_grad():
-        mb_size = 128
-        n_it = int(np.ceil((dataset.P_test / mb_size)))
-        for j in range(n_it):
-            dataset.minibatch(j * mb_size, (j + 1) * mb_size, test=True)
-            inputs = dataset.x_test_mb.to(device)
-            labels = dataset.y_test_mb.to(device)
-            outputs = mod(inputs)
-            _, predicted = torch.max(outputs, 1)
-            total_samples += labels.size(0)
-            correct_predictions += (predicted == labels).sum().item()
+        if isinstance(dataset, Dataset):
+            mb_size = 128
+            correct_predictions = 0
+            total_samples = 0
+            n_it = int(np.ceil((dataset.P_test / mb_size)))
+            for j in range(n_it):
+                dataset.minibatch(j * mb_size, (j + 1) * mb_size, test=True)
+                inputs = dataset.x_test_mb.to(device)
+                labels = dataset.y_test_mb.to(device)
+                outputs = mod(inputs)
+                _, predicted = torch.max(outputs, 1)
+                total_samples += labels.size(0)
+                correct_predictions += (predicted == labels).sum().item()
 
-    accuracy = correct_predictions / total_samples
+            accuracy = correct_predictions / total_samples
+        else:
+            P = len(dataset) * (len(dataset[0][0]) - 1) + len(dataset[-1][0])
+            tot = 0
+            for x, y in dataset:
+                x, y = x.to(device), y.to(device)
+                y_pred = mod(x)
+                _, predicted = torch.max(y_pred, 1)
+                tot += (y == predicted).sum().item()
+            accuracy = tot / P
+
     return accuracy
 
 
 
 
 
-def set_architecture(arch:str, input_dim:int, seed: int, num_classes = 10):
+def set_architecture(arch:str, input_dim:int, seed: int):
     torch.manual_seed(seed)
     if arch=='S':
         return nn.Sequential(nn.Linear(input_dim,50),nn.Sigmoid(),nn.Linear(50,1))
@@ -141,8 +146,18 @@ def set_architecture(arch:str, input_dim:int, seed: int, num_classes = 10):
     else:
         raise SystemError('Set an architecture in {S,M,L,XL,XXL,XXXL,4XL} and try again')
 
+def initialize_weights(model):
+    for m in model.modules():
+        if isinstance(m, (torch.nn.Conv2d, torch.nn.Linear)):
+            torch.nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                torch.nn.init.constant_(m.bias, 0)
+        elif isinstance(m, (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d, torch.nn.BatchNorm3d)):
+            torch.nn.init.constant_(m.weight, 1)
+            torch.nn.init.constant_(m.bias, 0)
 
-def set_CNN(arch:str, seed: int, num_classes = 10):
+
+def get_pretrained_net(arch:str, seed: int, num_classes = 10):
     torch.manual_seed(seed)
     if arch == 'resnet18':
         pretrainedmodel = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1,
@@ -195,7 +210,7 @@ def set_CNN(arch:str, seed: int, num_classes = 10):
     else:
         raise SystemError('Set an architecture resnet or mobilenet and try again')
 
-def set_optimizer(opt: str, model: FNN, *args, **kwargs):
+def set_optimizer(opt: str, model, *args, **kwargs):
     if opt == 'adadelta':
         optimizer = torch.optim.Adadelta(model.parameters(), *args, **kwargs)
     elif opt == 'adam':
@@ -224,15 +239,51 @@ def set_optimizer(opt: str, model: FNN, *args, **kwargs):
     return optimizer
 
 
+def set_dataset(ds:str, bs:int, RR:bool, seed: int, transform = None, subset = None, to_list = False):
+    if transform == None:
+        torch.manual_seed(seed)
+        transform = torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip(),
+                                                    torchvision.transforms.RandomRotation(10),
+                                                    torchvision.transforms.RandomAffine(0, shear=10,scale=(0.8, 1.2)),
+                                                    torchvision.transforms.ColorJitter(brightness=0.2, contrast=0.2,saturation=0.2),
+                                                    torchvision.transforms.ToTensor(),
+                                                    torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    if ds == 'cifar10':
+        ds_train = torchvision.datasets.CIFAR10(download=True, root='./', train=True, transform=transform)
+        ds_test = torchvision.datasets.CIFAR10(download=True, root='./', train=False, transform=transform)
+        if subset is not None:
+            inds_train, inds_test = subset
+            ds_train = Subset(ds_train,inds_train)
+            ds_test = Subset(ds_test,inds_test)
+        train_loader = torch.utils.data.DataLoader(ds_train, batch_size=bs, shuffle=RR)
+        test_loader = torch.utils.data.DataLoader(ds_test, batch_size=bs, shuffle=RR)
+    elif ds == 'cifar100':
+        ds_train = torchvision.datasets.CIFAR100(download=True, root='./', train=True, transform=transform)
+        ds_test = torchvision.datasets.CIFAR100(download=True, root='./', train=False, transform=transform)
+        if subset is not None:
+            inds_train, inds_test = subset
+            ds_train = Subset(ds_train,inds_train)
+            ds_test = Subset(ds_test,inds_test)
+        train_loader = torch.utils.data.DataLoader(ds_train, batch_size=bs, shuffle=RR)
+        test_loader = torch.utils.data.DataLoader(ds_test, batch_size=bs, shuffle=RR)
+    else:
+        raise ValueError('Dataset not supported')
+    if to_list == True:
+        train_loader = [(x,y) for x,y in train_loader]
+        test_loader = [(x,y) for x,y in test_loader]
+    return train_loader, test_loader
+
+
+
 
 
 def get_w(model):
-    weights = [p.ravel().detach() for p in model.parameters()]
-    return torch.cat(weights)
+    return torch.cat([p.data.view(-1) for p in model.parameters()])
+
 
 def set_w(model, w):
     index = 0
     for param in model.parameters():
-        param_size = torch.prod(torch.tensor(param.size())).item()
+        param_size = torch.numel(param)
         param.data = w[index:index+param_size].view(param.size()).to(param.device)
         index += param_size
