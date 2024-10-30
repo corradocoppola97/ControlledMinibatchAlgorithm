@@ -1,14 +1,19 @@
+import os
+
 import numpy as np
 from Optimizers import CMA_L
 from nmcma import NMCMA
 from cma import CMA
+from CMA_Fixed_Decrease import CMAFD
 from lbfgs_adapted import *
 from ig import IG
 from Dataset import Dataset
 import torch
 import torch.nn as nn
 import torchvision
+import torchvision.transforms as transforms
 from torch.utils.data import Subset
+import torchvision.datasets as datasets
 
 
 
@@ -45,7 +50,7 @@ def closure(dataset,
                     L += (len(x) / dataset.P) * loss
         else:
             L = 0
-            P = len(dataset)*(len(dataset[0][0])-1)+len(dataset[-1][0])
+            P = (len(dataset)-1) * (len(dataset[0][0])) + len(dataset[-1][0])
             for x, y in dataset:
                 x, y = x.to(device), y.to(device)
                 y_pred = mod(x)
@@ -74,7 +79,7 @@ def accuracy(dataset,
 
             accuracy = correct_predictions / total_samples
         else:
-            P = len(dataset) * (len(dataset[0][0]) - 1) + len(dataset[-1][0])
+            P = (len(dataset)-1) * (len(dataset[0][0])) + len(dataset[-1][0])
             tot = 0
             for x, y in dataset:
                 x, y = x.to(device), y.to(device)
@@ -157,46 +162,77 @@ def initialize_weights(model):
             torch.nn.init.constant_(m.bias, 0)
 
 
-def get_pretrained_net(arch:str, seed: int, num_classes = 10):
+def get_pretrained_net(arch:str, seed: int, num_classes = 10, pretrained=True):
     torch.manual_seed(seed)
     if arch == 'resnet18':
-        pretrainedmodel = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1,
-                                                      progress=True)
-        num_ftrs = pretrainedmodel.fc.in_features
-        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
-        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        if pretrained:
+            pretrainedmodel = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1,
+                                                          progress=True)
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        else:
+            pretrainedmodel = torchvision.models.resnet18()
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
         return pretrainedmodel
 
+
     elif arch == 'resnet50':
-        pretrainedmodel = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1,
-                                                      progress=True)
-        num_ftrs = pretrainedmodel.fc.in_features
-        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
-        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        if pretrained:
+            pretrainedmodel = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1,
+                                                          progress=True)
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        else:
+            pretrainedmodel = torchvision.models.resnet50()
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
         return pretrainedmodel
 
     elif arch == 'resnet152':
-        pretrainedmodel = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V1,
-                                                       progress=True)
-        num_ftrs = pretrainedmodel.fc.in_features
-        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
-        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
-        return pretrainedmodel
+            if pretrained:
+                pretrainedmodel = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V1,
+                                                              progress=True)
+                num_ftrs = pretrainedmodel.fc.in_features
+                pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+                torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+            else:
+                pretrainedmodel = torchvision.models.resnet152()
+                num_ftrs = pretrainedmodel.fc.in_features
+                pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+                torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+            return pretrainedmodel
 
     elif arch == 'resnet34':
-        pretrainedmodel = torchvision.models.resnet34(weights=torchvision.models.ResNet34_Weights.IMAGENET1K_V1,
-                                                       progress=True)
-        num_ftrs = pretrainedmodel.fc.in_features
-        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
-        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        if pretrained:
+            pretrainedmodel = torchvision.models.resnet34(weights=torchvision.models.ResNet34_Weights.IMAGENET1K_V1,
+                                                          progress=True)
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        else:
+            pretrainedmodel = torchvision.models.resnet34()
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
         return pretrainedmodel
 
     elif arch == 'resnet101':
-        pretrainedmodel = torchvision.models.resnet101(weights=torchvision.models.ResNet101_Weights.IMAGENET1K_V1,
-                                                       progress=True)
-        num_ftrs = pretrainedmodel.fc.in_features
-        pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
-        torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        if pretrained:
+            pretrainedmodel = torchvision.models.resnet101(weights=torchvision.models.ResNet101_Weights.IMAGENET1K_V1,
+                                                          progress=True)
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
+        else:
+            pretrainedmodel = torchvision.models.resnet101()
+            num_ftrs = pretrainedmodel.fc.in_features
+            pretrainedmodel.fc = torch.nn.Linear(num_ftrs, num_classes)
+            torch.nn.init.xavier_uniform(pretrainedmodel.fc.weight)
         return pretrainedmodel
 
     elif arch == 'mobilenet_v2':
@@ -233,6 +269,8 @@ def set_optimizer(opt: str, model, *args, **kwargs):
         optimizer = NMCMA(model.parameters(), *args, **kwargs)
     elif opt=='cmal':
         optimizer = CMA_L(model.parameters(), *args, **kwargs)
+    elif opt=='cmafd':
+        optimizer = CMAFD(model.parameters(), *args, **kwargs)
     else:
         raise SystemError('Optimizer not supported')
 
@@ -241,13 +279,22 @@ def set_optimizer(opt: str, model, *args, **kwargs):
 
 def set_dataset(ds:str, bs:int, RR:bool, seed: int, transform = None, subset = None, to_list = False):
     if transform == None:
-        torch.manual_seed(seed)
-        transform = torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip(),
-                                                    torchvision.transforms.RandomRotation(10),
-                                                    torchvision.transforms.RandomAffine(0, shear=10,scale=(0.8, 1.2)),
-                                                    torchvision.transforms.ColorJitter(brightness=0.2, contrast=0.2,saturation=0.2),
-                                                    torchvision.transforms.ToTensor(),
-                                                    torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        if ds in ['cifar10', 'cifar100']:
+            torch.manual_seed(seed)
+            transform = torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip(),
+                                                        torchvision.transforms.RandomRotation(10),
+                                                        torchvision.transforms.RandomAffine(0, shear=10,scale=(0.8, 1.2)),
+                                                        torchvision.transforms.ColorJitter(brightness=0.2, contrast=0.2,saturation=0.2),
+                                                        torchvision.transforms.ToTensor(),
+                                                        torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        elif ds == 'tinyimagenet':
+            transform = transforms.Compose([
+                transforms.Resize((64, 64)),  # Tiny ImageNet images are smaller in resolution
+                transforms.RandomHorizontalFlip(),  # Data augmentation
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
+
     if ds == 'cifar10':
         ds_train = torchvision.datasets.CIFAR10(download=True, root='./', train=True, transform=transform)
         ds_test = torchvision.datasets.CIFAR10(download=True, root='./', train=False, transform=transform)
@@ -256,7 +303,7 @@ def set_dataset(ds:str, bs:int, RR:bool, seed: int, transform = None, subset = N
             ds_train = Subset(ds_train,inds_train)
             ds_test = Subset(ds_test,inds_test)
         train_loader = torch.utils.data.DataLoader(ds_train, batch_size=bs, shuffle=RR)
-        test_loader = torch.utils.data.DataLoader(ds_test, batch_size=bs, shuffle=RR)
+        test_loader = torch.utils.data.DataLoader(ds_test, batch_size=bs, shuffle=False)
     elif ds == 'cifar100':
         ds_train = torchvision.datasets.CIFAR100(download=True, root='./', train=True, transform=transform)
         ds_test = torchvision.datasets.CIFAR100(download=True, root='./', train=False, transform=transform)
@@ -265,7 +312,36 @@ def set_dataset(ds:str, bs:int, RR:bool, seed: int, transform = None, subset = N
             ds_train = Subset(ds_train,inds_train)
             ds_test = Subset(ds_test,inds_test)
         train_loader = torch.utils.data.DataLoader(ds_train, batch_size=bs, shuffle=RR)
-        test_loader = torch.utils.data.DataLoader(ds_test, batch_size=bs, shuffle=RR)
+        test_loader = torch.utils.data.DataLoader(ds_test, batch_size=bs, shuffle=False)
+    elif ds == 'mnist':
+        ds_train = torchvision.datasets.MNIST(download=True, root='./', train=True, transform=transform)
+        ds_test = torchvision.datasets.MNIST(download=True, root='./', train=False, transform=transform)
+        if subset is not None:
+            inds_train, inds_test = subset
+            ds_train = Subset(ds_train, inds_train)
+            ds_test = Subset(ds_test, inds_test)
+        train_loader = torch.utils.data.DataLoader(ds_train, batch_size=bs, shuffle=RR)
+        test_loader = torch.utils.data.DataLoader(ds_test, batch_size=bs, shuffle=False)
+    elif ds == 'tinyimagenet':
+        train_data = datasets.ImageFolder(root='tiny-imagenet-200/tiny-imagenet-200/train', transform=transform)
+        test_data = datasets.ImageFolder(root='tiny-imagenet-200/tiny-imagenet-200/test', transform=transform)
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=bs, shuffle=RR)
+        test_loader = torch.utils.data.DataLoader(test_data, batch_size=bs, shuffle=False)
+
+    elif ds == 'stl10':
+        transform = transforms.Compose([
+            transforms.Resize((128, 128)),  # Resize the images to 128x128
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        # Loading the STL-10 dataset
+        train_dataset = datasets.STL10(root='./data', split='train', transform=transform, download=True)
+        test_dataset = datasets.STL10(root='./data', split='test', transform=transform, download=True)
+
+        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=bs, shuffle=RR)
+        test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=bs, shuffle=False)
+
     else:
         raise ValueError('Dataset not supported')
     if to_list == True:
