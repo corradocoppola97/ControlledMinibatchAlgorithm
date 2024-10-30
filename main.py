@@ -194,19 +194,6 @@ if __name__ == "__main__":
     smroot = 'prove_CMAL/'
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('device == ',device)
-
-    print('---------------- CMA Light -----------------')
-    for idx, problem in enumerate(all_probs):
-        print(f'Solving Problem {idx + 1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
-        for j, seed in enumerate(seeds):
-            print(f'Run {j + 1}/{len(seeds)}')
-            history = train_model(ds=problem[0], arch=problem[1], sm_root=smroot, opt='cmal', ep=1000000, time_limit=100,
-                                  max_it_EDFL=100, ID_history='seed_' + str(seed), alpha=0.5, zeta=1e-2, eps=1e-3,
-                                  theta=0.5,
-                                  delta=0.5, gamma=1e-6, verbose=False, tau=1e-2, batch_size=128, verbose_EDFL=False,
-                                  verbose_train=False, seed=seed, device=device)
-
-
     # print('---------------- NMCMA -----------------')
     # for idx,problem in enumerate(all_probs):
     #  print(f'Solving Problem {idx+1}/{len(all_probs)} --- Dataset: {problem[0]}   Network: {problem[1]}')
